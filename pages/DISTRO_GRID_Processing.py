@@ -1,0 +1,413 @@
+from msilib.schema import File
+from turtle import width
+import streamlit as st
+import pandas as pd
+import numpy as np
+from io import BytesIO
+from PIL import Image
+from openpyxl import Workbook
+import snowflake.connector  
+from Target_DG_format import format_TARGET_DistroGrid
+from Foodmaxx_DG_format import format_FOODMAXX_DistroGrid
+from Luckys_DG_format import format_LUCKYS_DistroGrid
+from Savemart_DG_format import format_SAVEMART_DistroGrid
+from Walmart_DG_format import format_WALMART_DistroGrid
+from Raleys_DG_format import format_RALEYS_DistroGrid
+from Safeway_DG_format import format_SAFEWAY_DistroGrid
+from Wholefoods_DG_format import format_WHOLEFOODS_DistroGrid
+from Sprouts_DG_format import format_SPROUTS_DistroGrid
+from openpyxl.utils.dataframe import dataframe_to_rows
+import openpyxl
+from streamlit_extras.app_logo import add_logo
+
+
+
+#==================================================================================================================
+
+# THIS SECTION OF CODE HANDLES THE LOGO AND SETS THE VIEW TO WIDE 
+
+#==================================================================================================================
+
+
+# Displaying images on the front end
+from PIL import Image
+st.set_page_config(layout="wide")
+
+
+def add_logo(logo_path, width, height):
+    """Read and return a resized logo"""
+    logo = Image.open(logo_path)
+    modified_logo = logo.resize((width, height))
+    return modified_logo
+#add_logo("./images/DeltaPacific_Logo.jpg", width = 200, height = 100)
+my_logo = add_logo(logo_path="./images/DeltaPacific_Logo.jpg", width=200, height = 100)
+st.sidebar.image(my_logo)
+st.sidebar.subheader("Delta Pacific Beverage Co.")
+st.subheader("Distribution Grid Processing")
+
+
+## Add horizontal line
+st.markdown("<hr>", unsafe_allow_html=True)
+#==================================================================================================================
+
+# END OF THE SECTION OF CODE HANDLES THE LOGO AND SETS THE VIEW TO WIDE 
+
+#==================================================================================================================
+
+
+#====================================================================================================================
+# HERE WE CREATE CONNECTION TO SNOWFLAKE
+#====================================================================================================================
+
+
+# Load Snowflake credentials from the secrets.toml file
+snowflake_creds = st.secrets["snowflake"]
+
+# Establish a new connection to Snowflake
+conn = snowflake.connector.connect(
+    account=snowflake_creds["account"],
+    user=snowflake_creds["user"],
+    password=snowflake_creds["password"],
+    warehouse=snowflake_creds["warehouse"],
+    database=snowflake_creds["database"],
+    schema=snowflake_creds["schema"]
+)
+
+#====================================================================================================================
+# End CREATE CONNECTION TO SNOWFLAKE
+#====================================================================================================================
+
+
+
+#====================================================================================================================
+# HERE WE CREATE THE FUNCTION TO GET THE CHAIN OPTIONS FROM SNOWFLAKE FOR THE DROPDOWN
+#====================================================================================================================
+
+# Function to retrieve options from Snowflake table
+def get_options():
+    cursor = conn.cursor()
+    cursor.execute('SELECT option_name FROM options_table ORDER BY option_name')
+    options = [row[0] for row in cursor]
+    return options
+
+#====================================================================================================================
+# END THE FUNCTION TO GET THE CHAIN OPTIONS FROM SNOWFLAKE FOR THE DROPDOWN
+#====================================================================================================================
+
+
+
+#====================================================================================================================
+# THE FUNCTION TO UPDATE THE CHAIN OPTIONS IN SNOWFLAKE FOR THE DROPDOWN
+#====================================================================================================================
+# Function to update options in Snowflake table
+def update_options(options):
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM options_table')
+    for option in options:
+        cursor.execute("INSERT INTO options_table (option_name) VALUES (%s)", (option,))
+    conn.commit()
+
+
+#====================================================================================================================
+# END THE FUNCTION TO UPDATE THE CHAIN OPTIONS IN SNOWFLAKE FOR THE DROPDOWN
+#====================================================================================================================
+
+
+
+#===================================================================================================================
+
+# Create a container to hold the file uploader
+#===================================================================================================================
+file_container = st.container()
+
+#===================================================================================================================
+# ASSISGN AND Add a title to the container
+#===================================================================================================================
+
+    
+
+
+#===================================================================================================================
+# END ASSISGN AND Add a title to the container
+#===================================================================================================================
+
+
+
+    # Retrieve options from Snowflake table
+options = get_options()
+
+# Initialize session state variables
+if 'new_option' not in st.session_state:
+    st.session_state.new_option = ""
+if 'option_added' not in st.session_state:
+    st.session_state.option_added = False
+
+# Check if options are available
+if not options:
+    st.warning("No options available. Please add options to the list.")
+else:
+    # Create the dropdown in Streamlit
+    with file_container:
+        selected_option = st.selectbox(':red[Select the Chain Distro Grid to format]', options + ['Add new option...'], key="existing_option")
+
+        # Check if the selected option is missing and allow the user to add it
+        if selected_option == 'Add new option...':
+            st.write("You selected: Add new option...")
+        
+            # Show the form to add a new option
+            with st.form(key='add_option_form', clear_on_submit=True):
+                new_option = st.text_input('Enter the new option', value=st.session_state.new_option)
+                submit_button = st.form_submit_button('Add Option')
+            
+                if submit_button and new_option:
+                    options.append(new_option)
+                    update_options(options)
+                    st.success('Option added successfully!')
+                    st.session_state.option_added = True
+
+            # Clear the text input field
+            st.session_state.new_option = ""
+        
+        else:
+            # Display the selected option
+            st.write(f"You selected: {selected_option}")
+
+
+#====================================================================================================================
+# Distibution Grid formatter 
+
+#======================================================================================================================
+
+# Add the file uploader inside the container
+with file_container:
+    uploaded_file = st.file_uploader(":red[Browse or drag here Distribution Grid to Format]", type=["xlsx"])
+
+
+    # Add horizontal line
+    st.markdown("<hr>", unsafe_allow_html=True)
+
+
+    formatted_workbook = None  # Initialize the variable
+
+        
+with file_container:
+    if st.button("Reformat DG Spreadsheet"):
+        if uploaded_file is None:
+            st.warning("Please upload a spreadsheet first.")
+        else:
+            # Load the workbook
+            workbook = openpyxl.load_workbook(uploaded_file)
+            
+
+            # Call the format_TARGET_DistroGrid function for 'TARGET' option
+            if selected_option == 'TARGET':
+                formatted_workbook = format_TARGET_DistroGrid(workbook)
+
+            elif selected_option == 'FOODMAXX': #ADD THIS CONDITION FOR 'Food Maxx' OPTION
+                formatted_workbook = format_FOODMAXX_DistroGrid(workbook)
+
+            elif selected_option == 'LUCKYS': #ADD THIS CONDITION FOR 'LUCKYS' OPTION
+                formatted_workbook = format_LUCKYS_DistroGrid(workbook)
+            
+            elif selected_option == 'SAFEWAY':  # Add this condition for 'SAFEWAY' option
+                formatted_workbook = format_SAFEWAY_DistroGrid(workbook)
+
+            elif selected_option == 'WALMART': #ADD THIS CONDITION FOR 'WALMART' OPTION
+                formatted_workbook = format_WALMART_DistroGrid(workbook)
+
+            elif selected_option == 'SAVEMART': #ADD THIS CONDITION FOR 'Save Mart' OPTION
+                formatted_workbook = format_SAVEMART_DistroGrid(workbook)
+
+            elif selected_option == 'SPROUTS': #ADD THIS CONDITION FOR 'SPROUTS' OPTION
+                formatted_workbook = format_SPROUTS_DistroGrid(workbook)
+
+            elif selected_option == 'RALEYS': 
+                formatted_workbook = format_RALEYS_DistroGrid(workbook)
+
+            elif selected_option == 'WHOLEFOODS':
+                formatted_workbook = format_WHOLEFOODS_DistroGrid(workbook)
+
+
+            else:
+                # Call other formatting functions for different options
+                # Add your code here for other formatting functions
+                formatted_workbook = workbook  # Use the original workbook
+
+            # Create a new filename based on the selected option
+            st.write("I am back")
+            new_filename = f"formatted_{selected_option}_spreadsheet.xlsx"
+
+            st.write(new_filename)
+
+
+# Check if the workbook was successfully formatted
+if formatted_workbook is not None:
+    
+    # Save the formatted workbook to a stream
+    stream = BytesIO()
+    formatted_workbook.save(stream)
+    stream.seek(0)
+
+   
+    # Provide the download link for the formatted spreadsheet
+    with file_container:
+        st.download_button(
+            label="Download formatted spreadsheet",
+            data=stream.read(),
+            file_name=new_filename,
+            mime='application/vnd.ms-excel'
+        )
+        
+
+# Close the Snowflake connection
+conn.close()
+
+
+
+#=======================================================================================================
+# End of distribution grid formatting code
+#========================================================================================================
+
+
+#===========================================================================================================
+# create code uploader in preparation to write to snowflake
+#==========================================================================================================
+
+# Create a container to hold the file uploader
+snowflake_file_container = st.container()
+
+
+# Add a title to the container
+with snowflake_file_container:
+    st.subheader(":blue[Grid Write to Snowflake Uploader]")
+
+with snowflake_file_container:
+    # create file uploader
+    uploaded_files = st.file_uploader("Browse or select formatted Distrobution Grid excel sheets", type=["xlsx"], accept_multiple_files=True)
+
+# Process each uploaded file
+for uploaded_file in uploaded_files:
+    # Read Excel file into pandas ExcelFile object
+    excel_file = pd.ExcelFile(uploaded_file)
+
+    ## Get sheet names from ExcelFile object
+    sheet_names = excel_file.sheet_names
+
+    ## Display workbook name and sheet names in Streamlit
+    #workbook_name = uploaded_file.name
+    #st.write(f"Workbook Name: {workbook_name}")
+    #st.write("Sheet Names:", sheet_names)
+
+    # Display DataFrame for each sheet in Streamlit
+    for sheet_name in sheet_names:
+        df = pd.read_excel(excel_file, sheet_name=sheet_name)
+
+
+#===========================================================================================================
+# End of code to create code uploader in preparation to write to snowflake
+#==========================================================================================================
+
+        # Load Snowflake credentials from the secrets.toml file
+snowflake_creds = st.secrets["snowflake"]
+
+# Establish a new connection to Snowflake
+conn = snowflake.connector.connect(
+    account=snowflake_creds["account"],
+    user=snowflake_creds["user"],
+    password=snowflake_creds["password"],
+    warehouse=snowflake_creds["warehouse"],
+    database=snowflake_creds["database"],
+    schema=snowflake_creds["schema"]
+
+)
+
+
+
+def table_exists(conn, schema, table_name):
+    cursor = conn.cursor()
+    query = """
+    SELECT COUNT(*)
+    FROM INFORMATION_SCHEMA.TABLES
+    WHERE TABLE_SCHEMA = %s
+    AND TABLE_NAME = %s
+    """
+    cursor.execute(query, (schema, table_name))
+    result = cursor.fetchone()
+    cursor.close()
+    return result[0] > 0
+
+# Process each uploaded file
+for uploaded_file in uploaded_files:
+    # Read Excel file into pandas ExcelFile object
+    excel_file = pd.ExcelFile(uploaded_file)
+
+    # Get sheet names from ExcelFile object
+    sheet_names = excel_file.sheet_names
+    
+    # Display DataFrame for each sheet in Streamlit
+    for sheet_name in sheet_names:
+        df = pd.read_excel(excel_file, sheet_name=sheet_name)
+
+        # Display DataFrame in Streamlit
+        st.dataframe(df)
+
+   
+
+        # Write DataFrame to Snowflake on button click
+    button_key = f"import_button_{uploaded_file.name}_{sheet_name}"
+    if st.button("Import into Snowflake", key=button_key):
+        with st.spinner('Uploading data to Snowflake ...'):
+            # Create a table if it doesn't exist
+            table_name = "DISTRO_GRID_TEST"  # Replace with your table name
+            schema = "DATASETS"  # Replace with your schema name
+
+        # Replace 'NAN' values with NULL
+        df = df.replace('NAN', np.nan).fillna(value='', method=None)
+
+        # Replace empty strings with None
+        df = df.replace('', None)
+
+        # Generate the SQL query
+        placeholders = ', '.join(['%s'] * len(df.columns))
+        insert_query = f"""
+        INSERT INTO {schema}.{table_name} (
+            STORE_NAME,
+            STORE_NUMBER,
+            UPC,
+            SKU,
+            PRODUCT_NAME,
+            MANUFACTURER,
+            SEGMENT,
+            YES_NO,
+            ACTIVATION_STATUS,
+            COUNTY,
+            CHAIN_NAME
+        )
+        VALUES ({placeholders})
+        """
+
+        # Establish a connection to Snowflake
+        snowflake_creds = st.secrets["snowflake"]
+        conn = snowflake.connector.connect(
+            account=snowflake_creds["account"],
+            user=snowflake_creds["user"],
+            password=snowflake_creds["password"],
+            warehouse=snowflake_creds["warehouse"],
+            database=snowflake_creds["database"],
+            schema=snowflake_creds["schema"]
+        )
+
+        # Chunk the DataFrame into smaller batches
+        chunk_size = 1000  # Adjust the chunk size as per your needs
+        chunks = [df[i:i + chunk_size] for i in range(0, len(df), chunk_size)]
+
+        # Execute the query with parameterized values for each chunk
+        cursor = conn.cursor()
+        for chunk in chunks:
+            cursor.executemany(insert_query, chunk.values.tolist())
+        cursor.close()
+
+        # Close the connection to Snowflake
+        conn.close()
+
+    st.write("Data has been imported into Snowflake table for Sheet:", sheet_name, "in workbook:", uploaded_file.name)
